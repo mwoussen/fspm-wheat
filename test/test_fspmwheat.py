@@ -5,6 +5,8 @@ import os
 import numpy as np
 import pandas as pd
 import random
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 
 from alinea.adel.adel_dynamic import AdelDyn
 from alinea.adel.echap_leaf import echap_leaves
@@ -76,7 +78,7 @@ def test_run(overwrite_desired_data=False):
                             ELEMENTS_INITIAL_STATE_FILENAME,
                             SOILS_INITIAL_STATE_FILENAME):
         inputs_dataframe = pd.read_csv(os.path.join(INPUTS_DIRPATH, inputs_filename))
-        inputs_dataframes[inputs_filename] = inputs_dataframe.where(inputs_dataframe.notnull(), None)
+        inputs_dataframes[inputs_filename] = inputs_dataframe.replace({np.nan: None})
 
     # -- SIMULATION PARAMETERS --
     START_TIME = 0
@@ -328,7 +330,6 @@ def test_run(overwrite_desired_data=False):
 
                         for t_cnwheat in range(t_growthwheat, t_growthwheat + GROWTHWHEAT_TIMESTEP, CNWHEAT_TIMESTEP):
                             if t_cnwheat > 0:
-
                                 # run CNWheat
                                 Tair = meteo.loc[t_elongwheat, 'air_temperature']
                                 Tsoil = meteo.loc[t_elongwheat, 'soil_temperature']
@@ -369,5 +370,278 @@ def test_run(overwrite_desired_data=False):
                                                 actual_outputs_filename, precision=PRECISION, overwrite_desired_data=overwrite_desired_data)
 
 
+def compare_to_vegetative_stages(simulation_data_dir, PLANT_DENSITY):
+    # -----------------------------------------------------------------------------------------
+    # ----- Test outputs against reference results of vegetative_stages example ---------------
+    # - Reference results are slightly diffrent from those presented in Gauthier et al. (2020)-
+    # -----------------------------------------------------------------------------------------
+    reference_path = r'Vegetative stages outputs'
+
+    current_path = os.getcwd()
+    simulation_data_path = os.path.abspath(os.path.join(current_path, os.pardir, 'example', simulation_data_dir))
+
+    OUTPUTS_DIRPATH = 'outputs'
+    POSTPROCESSING_DIRPATH = 'postprocessing'
+
+    # Name of the CSV files which will contain the outputs of the model
+    AXES_OUTPUTS_FILENAME = 'axes_outputs.csv'
+    HIDDENZONES_OUTPUTS_FILENAME = 'hiddenzones_outputs.csv'
+    # Name of the CSV files which will contain the postprocessing of the model
+    AXES_POSTPROCESSING_FILENAME = 'axes_postprocessing.csv'
+    ORGANS_POSTPROCESSING_FILENAME = 'organs_postprocessing.csv'
+    HIDDENZONES_POSTPROCESSING_FILENAME = 'hiddenzones_postprocessing.csv'
+    ELEMENTS_POSTPROCESSING_FILENAME = 'elements_postprocessing.csv'
+
+    GRAPHS_DIRPATH = 'graphs_validation'
+
+    with PdfPages(os.path.join(GRAPHS_DIRPATH, 'validation_graphs.pdf')) as pdf_pages:
+        # -- Lmax
+        # Current simulation
+        simulation_res = pd.read_csv(os.path.join(simulation_data_path, OUTPUTS_DIRPATH, HIDDENZONES_OUTPUTS_FILENAME))
+        simulation_res_df = simulation_res[(simulation_res['axis'] == 'MS') & (simulation_res['plant'] == 1) & ~np.isnan(simulation_res.leaf_Lmax)].copy()
+        last_value_idx = simulation_res_df.groupby(['metamer'])['t'].transform(max) == simulation_res_df['t']
+        simulation_res_df = simulation_res_df[last_value_idx].copy()
+
+        # Reference simulation
+        reference_res = pd.read_csv(os.path.join(reference_path, 'outputs', HIDDENZONES_OUTPUTS_FILENAME))
+        reference_res_df = reference_res[(reference_res['axis'] == 'MS') & (reference_res['plant'] == 1) & ~np.isnan(reference_res.leaf_Lmax)].copy()
+        last_value_idx = reference_res_df.groupby(['metamer'])['t'].transform(max) == reference_res_df['t']
+        reference_res_df = reference_res_df[last_value_idx].copy()
+
+        # Observed data
+        data_obs = pd.read_csv(os.path.join(reference_path, 'inputs', 'Ljutovac2002.csv'))
+        bchmk = data_obs
+        bchmk = bchmk.loc[bchmk.metamer >= min(simulation_res_df.metamer)]
+
+        # figure
+        fig, (ax, ax2) = plt.subplots(2, figsize=(10, 10))
+
+        ax.set_xlim((int(min(simulation_res_df.metamer) - 1), int(max(simulation_res_df.metamer) + 1)))
+        ax.set_ylim(ymin=0, ymax=np.nanmax(list(simulation_res_df['leaf_Lmax'] * 100 * 1.05) + list(bchmk['leaf_Lmax'] * 1.05)))
+
+        simulation_leaf_Lmax = simulation_res_df[['metamer', 'leaf_Lmax']].drop_duplicates()
+        reference_leaf_Lmax = reference_res_df[['metamer', 'leaf_Lmax']].drop_duplicates()
+
+        line1 = ax.plot(simulation_leaf_Lmax.metamer, simulation_leaf_Lmax['leaf_Lmax'] * 100, color='c', marker='o')
+        line2 = ax.plot(bchmk.metamer, bchmk['leaf_Lmax'], color='orange', marker='o', linestyle='None')
+        line3 = ax.plot(reference_leaf_Lmax.metamer, reference_leaf_Lmax['leaf_Lmax'] * 100, color='r', marker='o')
+
+        ax.set_ylabel('leaf_Lmax' + ' (cm)')
+        ax.set_title('leaf_Lmax')
+        ax.legend((line1[0], line2[0], line3[0]), ('Current simulation', 'Ljutovac 2002', 'Reference simulation'), loc=2)
+
+        # Second plot
+        ax2.plot(simulation_leaf_Lmax['leaf_Lmax'] * 100, reference_leaf_Lmax['leaf_Lmax'] * 100, marker='o', linestyle='None')
+        lims = [np.min([ax2.get_xlim(), ax2.get_ylim()]), np.max([ax2.get_xlim(), ax2.get_ylim()])]
+        ax2.plot(lims, lims, 'k-', alpha=0.75, zorder=0)
+
+        absError = (simulation_leaf_Lmax['leaf_Lmax'].reset_index() - reference_leaf_Lmax['leaf_Lmax'].reset_index())['leaf_Lmax']
+        SE = np.square(absError)  # squared errors
+        MSE = np.mean(SE)  # mean squared errors
+        RMSE = np.sqrt(MSE)  # Root Mean Squared Error, RMSE
+        Rsquared = 1.0 - (np.var(absError) / np.var(reference_leaf_Lmax['leaf_Lmax']))
+        ax2.text(13, 45, 'RMSE = %0.2f' % RMSE)
+        ax2.text(13, 42, 'R-squared = %0.2f' % Rsquared)
+
+        ax2.set_ylabel('Reference leaf_Lmax (cm)')
+        ax2.set_xlabel('Simulation leaf_Lmax (cm)')
+        ax2.set_xlim(lims)
+        ax2.set_ylim(lims)
+        plt.savefig(os.path.join(GRAPHS_DIRPATH, 'leaf_Lmax' + '.PNG'))
+        plt.show()
+        pdf_pages.savefig(fig)
+        plt.close()
+
+        # -- Phyllochron
+        # Current simulation
+        simulation_df_SAM = pd.read_csv(os.path.join(simulation_data_path, OUTPUTS_DIRPATH, AXES_OUTPUTS_FILENAME))
+        simulation_df_SAM = simulation_df_SAM[simulation_df_SAM['axis'] == 'MS']
+        simulation_df_hz = pd.read_csv(os.path.join(simulation_data_path, POSTPROCESSING_DIRPATH, HIDDENZONES_POSTPROCESSING_FILENAME))
+        simulation_grouped_df = simulation_df_hz[simulation_df_hz['axis'] == 'MS'].groupby(['plant', 'metamer'])[['t', 'leaf_is_emerged']]
+        simulation_leaf_emergence = {}
+
+        for group_name, data in simulation_grouped_df:
+            plant, metamer = group_name[0], group_name[1]
+            if metamer == 3 or True not in data['leaf_is_emerged'].unique():
+                continue
+            leaf_emergence_t = data[data['leaf_is_emerged'] == True].iloc[0]['t']
+            simulation_leaf_emergence[(plant, metamer)] = leaf_emergence_t
+
+        simulation_phyllochron = {'plant': [], 'metamer': [], 'phyllochron': []}
+        for key, leaf_emergence_t in sorted(simulation_leaf_emergence.items()):
+            plant, metamer = key[0], key[1]
+            if metamer == 4:
+                continue
+            simulation_phyllochron['plant'].append(plant)
+            simulation_phyllochron['metamer'].append(metamer)
+            prev_leaf_emergence_t = simulation_leaf_emergence[(plant, metamer - 1)]
+            if simulation_df_SAM[(simulation_df_SAM['t'] == leaf_emergence_t) | (simulation_df_SAM['t'] == prev_leaf_emergence_t)].sum_TT.count() == 2:
+                phyllo_DD = simulation_df_SAM[(simulation_df_SAM['t'] == leaf_emergence_t)].sum_TT.values[0] - simulation_df_SAM[(simulation_df_SAM['t'] == prev_leaf_emergence_t)].sum_TT.values[0]
+            else:
+                phyllo_DD = np.nan
+            simulation_phyllochron['phyllochron'].append(phyllo_DD)
+
+        # Reference simulation
+        reference_df_SAM = pd.read_csv(os.path.join(reference_path, OUTPUTS_DIRPATH, AXES_OUTPUTS_FILENAME))
+        reference_df_SAM = reference_df_SAM[reference_df_SAM['axis'] == 'MS']
+        reference_df_hz = pd.read_csv(os.path.join(reference_path, POSTPROCESSING_DIRPATH, HIDDENZONES_POSTPROCESSING_FILENAME))
+        reference_grouped_df = reference_df_hz[reference_df_hz['axis'] == 'MS'].groupby(['plant', 'metamer'])[['t', 'leaf_is_emerged']]
+        reference_leaf_emergence = {}
+
+        for group_name, data in reference_grouped_df:
+            plant, metamer = group_name[0], group_name[1]
+            if metamer == 3 or True not in data['leaf_is_emerged'].unique():
+                continue
+            leaf_emergence_t = data[data['leaf_is_emerged'] == True].iloc[0]['t']
+            reference_leaf_emergence[(plant, metamer)] = leaf_emergence_t
+
+        reference_phyllochron = {'plant': [], 'metamer': [], 'phyllochron': []}
+        for key, leaf_emergence_t in sorted(reference_leaf_emergence.items()):
+            plant, metamer = key[0], key[1]
+            if metamer == 4:
+                continue
+            reference_phyllochron['plant'].append(plant)
+            reference_phyllochron['metamer'].append(metamer)
+            prev_leaf_emergence_t = reference_leaf_emergence[(plant, metamer - 1)]
+            if reference_df_SAM[(reference_df_SAM['t'] == leaf_emergence_t) | (reference_df_SAM['t'] == prev_leaf_emergence_t)].sum_TT.count() == 2:
+                phyllo_DD = reference_df_SAM[(reference_df_SAM['t'] == leaf_emergence_t)].sum_TT.values[0] - reference_df_SAM[(reference_df_SAM['t'] == prev_leaf_emergence_t)].sum_TT.values[0]
+            else:
+                phyllo_DD = np.nan
+            reference_phyllochron['phyllochron'].append(phyllo_DD)
+
+        if len(simulation_phyllochron['metamer']) > 0:
+            fig, ax = plt.subplots()
+            plt.xlim((int(min(simulation_phyllochron['metamer']) - 1), int(max(simulation_phyllochron['metamer']) + 1)))
+            plt.ylim(ymin=0, ymax=150)
+
+            ax.plot(simulation_phyllochron['metamer'], simulation_phyllochron['phyllochron'], color='b', marker='o', label='Current simulation')
+            for i, j in zip(simulation_phyllochron['metamer'], simulation_phyllochron['phyllochron']):
+                ax.annotate(str(int(round(j, 0))), xy=(i, j + 2), ha='center')
+
+            ax.plot(reference_phyllochron['metamer'], reference_phyllochron['phyllochron'], color='r', marker='o', label='Reference simulation')
+            for i, j in zip(reference_phyllochron['metamer'], reference_phyllochron['phyllochron']):
+                ax.annotate(str(int(round(j, 0))), xy=(i, j + 2), ha='center')
+
+            ax.set_xlabel('Leaf number')
+            ax.set_ylabel('Phyllochron (Degree Day)')
+            ax.set_title('phyllochron')
+            plt.legend()
+            plt.savefig(os.path.join(GRAPHS_DIRPATH, 'phyllochron' + '.PNG'))
+            pdf_pages.savefig(fig)
+            plt.close()
+
+        # -- Phloem concentration
+        # Current simulation
+        simulation_organs_df = pd.read_csv(os.path.join(simulation_data_path, POSTPROCESSING_DIRPATH, ORGANS_POSTPROCESSING_FILENAME))
+        simulation_phloem_df = simulation_organs_df[(simulation_organs_df['axis'] == 'MS') & (simulation_organs_df['organ'] == 'phloem')]
+
+        # Reference simulation
+        reference_organs_df = pd.read_csv(os.path.join(reference_path, POSTPROCESSING_DIRPATH, ORGANS_POSTPROCESSING_FILENAME))
+        reference_phloem_df = reference_organs_df[(reference_organs_df['axis'] == 'MS') & (reference_organs_df['organ'] == 'phloem')]
+
+        # Graphs
+        vars_name = ['Conc_Sucrose', 'Conc_Amino_Acids']
+        for var in vars_name:
+            fig, ax = plt.subplots()
+            ax.plot(simulation_phloem_df.t, simulation_phloem_df[var], color='c', label='Current simulation')
+            ax.plot(reference_phloem_df.t, reference_phloem_df[var], color='r', label='Reference simulation')
+            ax.set_xlabel('Time (hour)')
+            ax.set_ylabel(var + '(µmol g-1 mstruct)')
+            plt.legend()
+            plt.savefig(os.path.join(GRAPHS_DIRPATH, var + '_phloem.PNG'))
+            pdf_pages.savefig(fig)
+            plt.close()
+
+        # -- Shoot root drymass
+        # Current simulation
+        simulation_axes_df = pd.read_csv(os.path.join(simulation_data_path, POSTPROCESSING_DIRPATH, AXES_POSTPROCESSING_FILENAME))
+        simulation_axis_df = simulation_axes_df[simulation_axes_df['axis'] == 'MS']
+
+        # Reference simulation
+        reference_axes_df = pd.read_csv(os.path.join(reference_path, POSTPROCESSING_DIRPATH, AXES_POSTPROCESSING_FILENAME))
+        reference_axis_df = reference_axes_df[reference_organs_df['axis'] == 'MS']
+
+        # Graphs
+        vars_name = {'shoot_roots_ratio': 'Shoot/Roots dry mass ratio', 'C_N_ratio': 'C/N mass ratio', 'sum_dry_mass_shoot': 'sum dry mass shoot (g)',
+                     'sum_dry_mass_roots': 'sum dry mass roots (g)', 'N_content_shoot': 'N franction (% dry mass)',
+                     'Total_Photosynthesis': 'Cumulative photosynthesis (µmol)'}
+
+        for var, leg in vars_name.items():
+            fig, ax = plt.subplots()
+            if var == 'Total_Photosynthesis':
+                ax.plot(simulation_axis_df.t, simulation_axis_df[var].cumsum(), color='c', label='Current simulation')
+                ax.plot(reference_axis_df.t, reference_axis_df[var].cumsum(), color='r', label='Reference simulation')
+            else:
+                ax.plot(simulation_axis_df.t, simulation_axis_df[var], color='c', label='Current simulation')
+                ax.plot(reference_axis_df.t, reference_axis_df[var], color='r', label='Reference simulation')
+            ax.set_xlabel('Time (hour)')
+            ax.set_ylabel(leg)
+            plt.legend()
+            plt.savefig(os.path.join(GRAPHS_DIRPATH, var + '.PNG'))
+            pdf_pages.savefig(fig)
+            plt.close()
+
+        # -- LAI
+        # Current simulation
+        simulation_df_elt = pd.read_csv(os.path.join(simulation_data_path, POSTPROCESSING_DIRPATH, ELEMENTS_POSTPROCESSING_FILENAME))
+        simulation_df_elt['green_area_rep'] = simulation_df_elt.green_area * simulation_df_elt.nb_replications
+        simulation_grouped_df = simulation_df_elt[(simulation_df_elt.axis == 'MS') & (simulation_df_elt.element == 'LeafElement1')].groupby(['t', 'plant'])
+
+        simulation_LAI_dict = {'t': [], 'plant': [], 'LAI': []}
+        for name, data in simulation_grouped_df:
+            t, plant = name[0], name[1]
+            simulation_LAI_dict['t'].append(t)
+            simulation_LAI_dict['plant'].append(plant)
+            simulation_LAI_dict['LAI'].append(data['green_area_rep'].sum() * PLANT_DENSITY[plant])
+
+        # Reference simulation
+        reference_df_elt = pd.read_csv(os.path.join(reference_path, POSTPROCESSING_DIRPATH, ELEMENTS_POSTPROCESSING_FILENAME))
+        reference_df_elt['green_area_rep'] = reference_df_elt.green_area * reference_df_elt.nb_replications
+        reference_grouped_df = reference_df_elt[(reference_df_elt.axis == 'MS') & (reference_df_elt.element == 'LeafElement1')].groupby(['t', 'plant'])
+
+        reference_LAI_dict = {'t': [], 'plant': [], 'LAI': []}
+        for name, data in reference_grouped_df:
+            t, plant = name[0], name[1]
+            reference_LAI_dict['t'].append(t)
+            reference_LAI_dict['plant'].append(plant)
+            reference_LAI_dict['LAI'].append(data['green_area_rep'].sum() * PLANT_DENSITY[plant])
+
+        # Graph
+        fig, ax = plt.subplots()
+        ax.plot(simulation_LAI_dict['t'], simulation_LAI_dict['LAI'], color='c', label='Current simulation')
+        ax.plot(reference_LAI_dict['t'], reference_LAI_dict['LAI'], color='r', label='Reference simulation')
+        ax.set_xlabel('Time (hour)')
+        ax.set_ylabel('LAI')
+        plt.legend()
+        plt.savefig(os.path.join(GRAPHS_DIRPATH, 'LAI' + '.PNG'))
+        pdf_pages.savefig(fig)
+        plt.close()
+
+        # -- Root N uptake
+        # Current simulation
+        simulation_organs_df = pd.read_csv(os.path.join(simulation_data_path, POSTPROCESSING_DIRPATH, ORGANS_POSTPROCESSING_FILENAME))
+        simulation_phloem_df = simulation_organs_df[(simulation_organs_df['axis'] == 'MS') & (simulation_organs_df['organ'] == 'roots')]
+
+        # Reference simulation
+        reference_organs_df = pd.read_csv(os.path.join(reference_path, POSTPROCESSING_DIRPATH, ORGANS_POSTPROCESSING_FILENAME))
+        reference_phloem_df = reference_organs_df[(reference_organs_df['axis'] == 'MS') & (reference_organs_df['organ'] == 'roots')]
+
+        # Graphs
+        vars_name = ['Uptake_Nitrates']
+        for var in vars_name:
+            fig, ax = plt.subplots()
+            ax.plot(simulation_phloem_df.t, simulation_phloem_df[var].cumsum(), color='c', label='Current simulation')
+            ax.plot(reference_phloem_df.t, reference_phloem_df[var].cumsum(), color='r', label='Reference simulation')
+            ax.set_xlabel('Time (hour)')
+            ax.set_ylabel('Cumulative Nitrates uptake (µmol)')
+            plt.legend()
+            plt.savefig(os.path.join(GRAPHS_DIRPATH, var + '_roots.PNG'))
+            pdf_pages.savefig(fig)
+            plt.close()
+
+
 if __name__ == '__main__':
     test_run(overwrite_desired_data=False)
+
+    data_for_validation_dir = 'external soil model'
+    compare_to_vegetative_stages(data_for_validation_dir, {1: 250})

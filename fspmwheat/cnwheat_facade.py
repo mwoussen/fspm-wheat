@@ -79,7 +79,8 @@ class CNWheatFacade(object):
                  shared_hiddenzones_inputs_outputs_df,
                  shared_elements_inputs_outputs_df,
                  shared_soils_inputs_outputs_df,
-                 update_shared_df=True):
+                 update_shared_df=True,
+                 external_soil_model=False):
         """
         :param openalea.mtg.mtg.MTG shared_mtg: The MTG shared between all models.
         :param int delta_t: The delta between two runs, in seconds.
@@ -88,19 +89,21 @@ class CNWheatFacade(object):
         :param pandas.DataFrame model_organs_inputs_df: the inputs of the model at organs scale.
         :param pandas.DataFrame model_hiddenzones_inputs_df: the inputs of the model at hiddenzones scale.
         :param pandas.DataFrame model_elements_inputs_df: the inputs of the model at elements scale.
-        :param pandas.DataFrame model_soils_inputs_df: the inputs of the model at soils scale.
+        :param pandas.DataFrame or None model_soils_inputs_df: the inputs of the model at soils scale.
         :param pandas.DataFrame shared_axes_inputs_outputs_df: the dataframe of inputs and outputs at axes scale shared between all models.
         :param pandas.DataFrame shared_organs_inputs_outputs_df: the dataframe of inputs and outputs at organs scale shared between all models.
         :param pandas.DataFrame shared_hiddenzones_inputs_outputs_df: the dataframe of inputs and outputs at hiddenzones scale shared between all models.
         :param pandas.DataFrame shared_elements_inputs_outputs_df: the dataframe of inputs and outputs at elements scale shared between all models.
         :param pandas.DataFrame shared_soils_inputs_outputs_df: the dataframe of inputs and outputs at soils scale shared between all models.
         :param bool update_shared_df: If `True`  update the shared dataframes at init and at each run (unless stated otherwise)
+        :param bool external_soil_model: whether an external soil model is coupled to cnwheat. If True, cnwheat will skip calculations made in soil and uptake N by roots
 
         """
 
         self._shared_mtg = shared_mtg  #: the MTG shared between all models
+        self.external_soil_model = external_soil_model
 
-        self._simulation = cnwheat_simulation.Simulation(respiration_model=respiwheat_model, delta_t=delta_t, culm_density=culm_density)
+        self._simulation = cnwheat_simulation.Simulation(respiration_model=respiwheat_model, delta_t=delta_t, culm_density=culm_density, external_soil_model=external_soil_model)
 
         self.population, self.soils = cnwheat_converter.from_dataframes(model_organs_inputs_df, model_hiddenzones_inputs_df, model_elements_inputs_df, model_soils_inputs_df)
 
@@ -269,6 +272,9 @@ class CNWheatFacade(object):
                                     print('Missing variable', cnwheat_organ_data_name, 'for vertex id', mtg_axis_vid, 'which is', mtg_organ_label)
 
                             cnwheat_organ.__dict__.update(cnwheat_organ_data_dict)
+                            if mtg_organ_label == 'roots' and self.external_soil_model:
+                                cnwheat_organ.Uptake_Nitrates = mtg_organ_properties['Uptake_Nitrates']
+                                cnwheat_organ.HATS_LATS = mtg_organ_properties['HATS_LATS']
 
                             # Update parameters if specified
                             if mtg_organ_label in self._update_parameters:
@@ -277,10 +283,10 @@ class CNWheatFacade(object):
                             cnwheat_organ.initialize()
                             # add the new organ to current axis
                             setattr(cnwheat_axis, mtg_organ_label, cnwheat_organ)
-                        elif cnwheat_organ_class is not cnwheat_model.Grains:
+                        elif cnwheat_organ_class not in (cnwheat_model.Grains, cnwheat_model.Endosperm):
                             is_valid_axis = False
                             break
-                    elif cnwheat_organ_class is not cnwheat_model.Grains:
+                    elif cnwheat_organ_class not in (cnwheat_model.Grains, cnwheat_model.Endosperm):
                         is_valid_axis = False
                         break
 
@@ -481,7 +487,7 @@ class CNWheatFacade(object):
 
                 #: Temporary: Store Soil variables at axis level
                 axis_id = (cnwheat_plant_index, cnwheat_axis_label)
-                if axis_id in self.soils.keys():
+                if not self.external_soil_model and axis_id in self.soils.keys():
                     if 'soil' not in self._shared_mtg.get_vertex_property(mtg_axis_vid):
                         # Add a property describing the organ to the current axis of the MTG
                         self._shared_mtg.property('soil')[mtg_axis_vid] = {}

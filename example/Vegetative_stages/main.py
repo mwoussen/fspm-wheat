@@ -155,7 +155,7 @@ def main(simulation_length, forced_start_time=0, run_simu=True, run_postprocessi
 
             previous_outputs_dataframe = pd.read_csv(os.path.join(OUTPUTS_DIRPATH, outputs_filename))
             # Convert NaN to None
-            previous_outputs_dataframes[outputs_filename] = previous_outputs_dataframe.where(previous_outputs_dataframe.notnull(), None)
+            previous_outputs_dataframes[outputs_filename] = previous_outputs_dataframe.replace({np.nan: None})
 
             assert 't' in previous_outputs_dataframes[outputs_filename].columns
             if forced_start_time > 0:
@@ -189,7 +189,7 @@ def main(simulation_length, forced_start_time=0, run_simu=True, run_postprocessi
                                 ELEMENTS_INITIAL_STATE_FILENAME,
                                 SOILS_INITIAL_STATE_FILENAME):
             inputs_dataframe = pd.read_csv(os.path.join(INPUTS_DIRPATH, inputs_filename))
-            inputs_dataframes[inputs_filename] = inputs_dataframe.where(inputs_dataframe.notnull(), None)
+            inputs_dataframes[inputs_filename] = inputs_dataframe.replace({np.nan: None})
 
     # Start time of the simulation
     START_TIME = max(0, new_start_time)
@@ -629,7 +629,7 @@ def main(simulation_length, forced_start_time=0, run_simu=True, run_postprocessi
                                             organs_postprocessing_df=postprocessing_df_dict[organs_postprocessing_file_basename],
                                             elements_postprocessing_df=postprocessing_df_dict[elements_postprocessing_file_basename],
                                             soils_postprocessing_df=postprocessing_df_dict[soils_postprocessing_file_basename],
-                                            graphs_dirpath=GRAPHS_DIRPATH)
+                                            meteo_data=meteo, graphs_dirpath=GRAPHS_DIRPATH)
 
         # --- Additional graphs
         from cnwheat import tools as cnwheat_tools
@@ -1016,8 +1016,9 @@ def main(simulation_length, forced_start_time=0, run_simu=True, run_postprocessi
 
 
 if __name__ == '__main__':
+    RERmax_vegetative_stages_example = {'elongwheat': {'RERmax': {5: 3.35e-06, 6: 2.1e-06, 7: 2.e-06, 8: 1.83e-06, 9: 1.8e-06, 10: 1.65e-06, 11: 1.56e-06}}}
     main(2500, forced_start_time=0, run_simu=True, run_postprocessing=True, generate_graphs=True, run_from_outputs=False,
          show_3Dplant=False,
          option_static=False, tillers_replications={'T1': 0.5, 'T2': 0.5, 'T3': 0.5, 'T4': 0.5},
          heterogeneous_canopy=True, N_fertilizations={2016: 357143, 2520: 1000000},
-         PLANT_DENSITY={1: 250}, METEO_FILENAME='meteo_Ljutovac2002.csv')
+         PLANT_DENSITY={1: 250}, update_parameters_all_models=RERmax_vegetative_stages_example, METEO_FILENAME='meteo_Ljutovac2002.csv')
