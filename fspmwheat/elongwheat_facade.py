@@ -137,8 +137,7 @@ class ElongWheatFacade(object):
                     for i in range(mtg_axis_properties['nb_leaves']):
                         all_elongwheat_length_dict[axis_id][i + 1] = {'sheath': [], 'cumulated_internode': []}
                     # For coleoptile
-                    if self._shared_mtg.label(self._shared_mtg.components_at_scale(mtg_axis_vid, scale=3)[0]) == 'metamer0' and 'hiddenzone' in \
-                            self._shared_mtg.get_vertex_property(self._shared_mtg.components_at_scale(mtg_axis_vid, scale=3)[0]):
+                    if self._shared_mtg.label(self._shared_mtg.components_at_scale(mtg_axis_vid, scale=3)[0]) == 'metamer0':
                         all_elongwheat_length_dict[axis_id][0] = {'sheath': [], 'cumulated_internode': []}
 
                     elongwheat_cumulated_internode_length[axis_id] = []
