@@ -52,7 +52,7 @@ ORGANS_VARIABLES = set(cnwheat_simulation.Simulation.ORGANS_RUN_VARIABLES +
                        senescwheat_converter.SENESCWHEAT_ROOTS_INPUTS_OUTPUTS)
 SOILS_VARIABLES = set(cnwheat_simulation.Simulation.SOILS_RUN_VARIABLES)
 
-BOTANICAL_ORGANS_AT_AXIS_SCALE = ['roots', 'phloem', 'grains']
+BOTANICAL_ORGANS_AT_AXIS_SCALE = ['roots', 'phloem', 'grains', 'endosperm']
 BOTANICAL_COMPARTMENTS_AT_AXIS_SCALE = BOTANICAL_ORGANS_AT_AXIS_SCALE + ['soil']
 
 
@@ -129,8 +129,6 @@ class FSPMWheatFacade(object):
                     if botanical_organ_name in mtg_axis_properties:
                         organ_id = (mtg_plant_index, mtg_axis_label, botanical_organ_name)
                         mtg_organ_properties = mtg_axis_properties[botanical_organ_name]
-                        if mtg_organ_properties.get('sucrose') is None:
-                            continue
                         organ_dict = {}
                         for organ_run_variable in ORGANS_VARIABLES:
                             if organ_run_variable in mtg_organ_properties:

@@ -155,7 +155,7 @@ def main(simulation_length, forced_start_time=0, run_simu=True, run_postprocessi
 
             previous_outputs_dataframe = pd.read_csv(os.path.join(OUTPUTS_DIRPATH, outputs_filename))
             # Convert NaN to None
-            previous_outputs_dataframes[outputs_filename] = previous_outputs_dataframe.where(previous_outputs_dataframe.notnull(), None)
+            previous_outputs_dataframes[outputs_filename] = previous_outputs_dataframe.replace({np.nan: None})
 
             assert 't' in previous_outputs_dataframes[outputs_filename].columns
             if forced_start_time > 0:
@@ -189,7 +189,7 @@ def main(simulation_length, forced_start_time=0, run_simu=True, run_postprocessi
                                 ELEMENTS_INITIAL_STATE_FILENAME,
                                 SOILS_INITIAL_STATE_FILENAME):
             inputs_dataframe = pd.read_csv(os.path.join(INPUTS_DIRPATH, inputs_filename))
-            inputs_dataframes[inputs_filename] = inputs_dataframe.where(inputs_dataframe.notnull(), None)
+            inputs_dataframes[inputs_filename] = inputs_dataframe.replace({np.nan: None})
 
     # Start time of the simulation
     START_TIME = max(0, new_start_time)
@@ -629,7 +629,7 @@ def main(simulation_length, forced_start_time=0, run_simu=True, run_postprocessi
                                             organs_postprocessing_df=postprocessing_df_dict[organs_postprocessing_file_basename],
                                             elements_postprocessing_df=postprocessing_df_dict[elements_postprocessing_file_basename],
                                             soils_postprocessing_df=postprocessing_df_dict[soils_postprocessing_file_basename],
-                                            graphs_dirpath=GRAPHS_DIRPATH)
+                                            meteo_data=meteo, graphs_dirpath=GRAPHS_DIRPATH)
 
         # --- Additional graphs
         from cnwheat import tools as cnwheat_tools

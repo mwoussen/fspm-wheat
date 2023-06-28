@@ -253,7 +253,7 @@ class CaribuFacade(object):
 
         random.seed(1234)
 
-        # Built alea table if does not exist yet
+        # Built alea table if it does not exist yet
         if self._alea_canopy.empty:
             elements_vid_list = []
             for mtg_plant_vid in self._shared_mtg.components_iter(self._shared_mtg.root):
